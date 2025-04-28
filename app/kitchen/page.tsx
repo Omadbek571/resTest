@@ -1,7 +1,7 @@
 "use client"
 
 // React ni import qilish kerak (ayniqsa React.cloneElement uchun)
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react" // <<<--- useEffect va useState import qilingan
 import { useRouter } from "next/navigation"
 // useQueryClient hookini alohida import qilish yaxshiroq
 import { useQuery, useMutation, useQueryClient, QueryClient } from "@tanstack/react-query"
@@ -37,7 +37,7 @@ import { ToastContainer, toast } from "react-toastify"
 import "react-toastify/dist/ReactToastify.css"
 
 // ----- TypeScript Interfeyslari -----
-// (Oldingi javobdagidek - o'zgartirishsiz)
+// (O'zgartirishsiz)
 interface ProductDetails {
   name: string;
   image_url?: string;
@@ -91,6 +91,7 @@ const apiClient = axios.create({ baseURL: API_BASE_URL })
 
 apiClient.interceptors.request.use(
   (config) => {
+    // Interceptor ichida localStorage xavfsiz, chunki bu faqat clientda ishlaydi
     const token = localStorage.getItem("token")
     if (token && config.headers) { // config.headers mavjudligini tekshirish
       config.headers.Authorization = `Bearer ${token}`
@@ -119,7 +120,10 @@ const handleApiError = (
       if (error.response.status === 401) {
         errorMessage = "Sessiya muddati tugagan yoki avtorizatsiya xatosi.";
         // Toast ko'rsatishdan oldin token va keshni tozalash
-        localStorage.removeItem("token"); // Faqat tokenni o'chirish
+        // Shartli ravishda localStorage ga murojaat qilish
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem("token"); // Faqat tokenni o'chirish
+        }
         queryClientInstance.removeQueries(); // Barcha so'rovlarni va keshni tozalash
         toast.error(errorMessage + " Iltimos, qayta kiring.");
         router.push("/auth"); // Login sahifasiga yo'naltirish
@@ -182,7 +186,7 @@ const fetchOrderDetails = async (orderId: number | null, router: ReturnType<type
 
 
 // --- Mutation Funksiyalari ---
-// (O'zgartirishsiz - ular xatolikni yuqoriga uzatadi, useMutation onError hal qiladi)
+// (O'zgartirishsiz)
 const startPreparation = async ({ orderId }: { orderId: number }) => {
   const { data } = await apiClient.post(`/orders/${orderId}/start_preparation/`, {})
   return data
@@ -209,15 +213,18 @@ const acknowledgeNotification = async ({ logIds }: { logIds: number[] }) => {
 const LOCAL_STORAGE_VISIBLE_CATEGORIES_KEY = "kitchenVisibleCategories"
 
 // Boshlang'ich visibleCategories holatini localStorage'dan olish
-// (O'zgartirishsiz)
+// Endi bu ham client-side tekshiruvi bilan ishlaydi
 const getInitialVisibleCategories = (): { new: boolean; preparing: boolean; ready: boolean } => {
+  // Build paytida standart qiymatni qaytaramiz
   if (typeof window === "undefined") {
     return { new: true, preparing: true, ready: true }
   }
+  // Brauzerda localStorage'ni tekshiramiz
   try {
     const storedValue = localStorage.getItem(LOCAL_STORAGE_VISIBLE_CATEGORIES_KEY)
     if (storedValue) {
       const parsedValue = JSON.parse(storedValue)
+      // Format tekshiruvi (o'zgartirishsiz)
       if (
         typeof parsedValue === 'object' &&
         parsedValue !== null &&
@@ -259,67 +266,65 @@ export default function KitchenPage() {
   const [visibleCategories, setVisibleCategories] = useState(getInitialVisibleCategories)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
-  // Token tekshiruvi (sahifa yuklanganda bir marta)
+  const [isClientReady, setIsClientReady] = useState(false); // <<<--- YANGI STATE
+
+  // Token tekshiruvi va isClientReady ni o'rnatish
   useEffect(() => {
-    const token = localStorage.getItem("token")
+    setIsClientReady(true); // Komponent brauzerga yuklandi
+    const token = localStorage.getItem("token");
     if (!token) {
-      toast.info("Iltimos, tizimga kiring.")
-      queryClient.removeQueries(); // Agar token yo'q bo'lsa, keshni tozalash
-      router.push("/auth")
+      toast.info("Iltimos, tizimga kiring.");
+      queryClient.removeQueries();
+      router.push("/auth");
     }
-  }, [router, queryClient]) // queryClient ni dependency ga qo'shish
+  }, [router, queryClient]);
 
   // ----- React Query Hooks -----
 
-  // Buyurtmalarni olish
+  // Buyurtmalarni olish (enabled o'zgartirildi)
   const {
     data: orders = [],
     isLoading: isLoadingOrders,
     error: ordersError,
   } = useQuery<Order[], AxiosError>({
     queryKey: ['orders', 'kitchen'],
-    // queryFn ga queryClient ni uzatish
     queryFn: () => fetchOrders(router, queryClient),
     refetchInterval: 5000,
     staleTime: 3000,
-    enabled: !!localStorage.getItem('token'), // Token mavjud bo'lsagina ishga tushirish
+    enabled: isClientReady, // <<<--- O'ZGARTIRILDI
     onError: (error) => {
       console.error("useQuery Orders onError:", error);
       // Xato allaqachon handleApiError da qayta ishlanadi
     }
   })
 
-  // Bildirishnomalarni olish (10 sekundlik interval bilan)
+  // Bildirishnomalarni olish (enabled o'zgartirildi)
   const {
     data: notifications = [],
     isLoading: isLoadingNotifications,
     error: notificationsErrorObject,
   } = useQuery<NotificationLog[], AxiosError>({
     queryKey: ['notifications', 'kitchen'],
-    // queryFn ga queryClient ni uzatish
     queryFn: () => fetchNotifications(router, queryClient),
     refetchInterval: 10000,
     staleTime: 8000,
     refetchOnWindowFocus: true,
-    enabled: !!localStorage.getItem('token'), // Token mavjud bo'lsagina ishga tushirish
+    enabled: isClientReady, // <<<--- O'ZGARTIRILDI
     onError: (error) => {
       console.error("useQuery Notifications onError:", error);
       // Xato allaqachon handleApiError da qayta ishlanadi
     }
   });
 
-  // Buyurtma tafsilotlarini olish (faqat modal ochilganda)
+  // Buyurtma tafsilotlarini olish (enabled o'zgartirildi)
   const {
     data: selectedOrderDetails,
     isLoading: detailsLoading,
     error: detailsErrorObject,
   } = useQuery<Order | null, AxiosError>({
     queryKey: ['orderDetails', selectedOrderIdForDetails],
-    // queryFn ga queryClient ni uzatish
     queryFn: () => fetchOrderDetails(selectedOrderIdForDetails, router, queryClient),
-    // enabled: !!selectedOrderIdForDetails && isDetailsOpen, // Bu shart to'g'ri
-    // Token mavjudligini ham tekshirish
-    enabled: !!selectedOrderIdForDetails && isDetailsOpen && !!localStorage.getItem('token'),
+    enabled: isClientReady && !!selectedOrderIdForDetails && isDetailsOpen, // <<<--- O'ZGARTIRILDI
     staleTime: 60000,
     onError: (error) => {
       console.error("useQuery OrderDetails onError:", error);
@@ -329,10 +334,8 @@ export default function KitchenPage() {
 
 
   // ----- Mutations -----
-
-  // onError da handleApiError ni ishlatish
+  // (O'zgartirishsiz)
   const mutationOnError = (error: unknown, variables: any) => {
-    // Mutatsiya kontekstini (masalan, buyurtma ID si) olish uchun variables dan foydalanish
     const contextInfo = variables?.orderId
       ? `Buyurtma #${variables.orderId}`
       : variables?.logIds
@@ -341,7 +344,6 @@ export default function KitchenPage() {
     handleApiError(error, contextInfo, router, queryClient);
   };
 
-  // Buyurtmani tayyorlashni boshlash mutatsiyasi
   const startPreparationMutation = useMutation({
     mutationFn: startPreparation,
     onMutate: async ({ orderId }) => {
@@ -358,7 +360,7 @@ export default function KitchenPage() {
       return { previousOrders }
     },
     onError: (err, variables, context) => {
-      mutationOnError(err, variables); // Umumiy xatolik ishlovchisi
+      mutationOnError(err, variables);
       if (context?.previousOrders) {
         queryClient.setQueryData<Order[]>(['orders', 'kitchen'], context.previousOrders);
       }
@@ -371,7 +373,6 @@ export default function KitchenPage() {
     },
   })
 
-  // Buyurtmani tayyor deb belgilash mutatsiyasi
   const markReadyMutation = useMutation({
     mutationFn: markOrderReady,
     onMutate: async ({ orderId }) => {
@@ -389,7 +390,7 @@ export default function KitchenPage() {
       return { previousOrders };
     },
     onError: (err, variables, context) => {
-      mutationOnError(err, variables); // Umumiy xatolik ishlovchisi
+      mutationOnError(err, variables);
       if (context?.previousOrders) {
         queryClient.setQueryData<Order[]>(['orders', 'kitchen'], context.previousOrders);
       }
@@ -402,7 +403,6 @@ export default function KitchenPage() {
     },
   })
 
-  // Buyurtmani mijozga berildi deb belgilash mutatsiyasi
   const markServedMutation = useMutation({
     mutationFn: markOrderServed,
     onMutate: async ({ orderId }) => {
@@ -415,7 +415,7 @@ export default function KitchenPage() {
       return { previousOrders };
     },
     onError: (err, variables, context) => {
-      mutationOnError(err, variables); // Umumiy xatolik ishlovchisi
+      mutationOnError(err, variables);
       if (context?.previousOrders) {
         queryClient.setQueryData<Order[]>(['orders', 'kitchen'], context.previousOrders);
       }
@@ -428,8 +428,6 @@ export default function KitchenPage() {
     },
   });
 
-
-  // Buyurtmani bekor qilish mutatsiyasi
   const cancelOrderMutation = useMutation({
     mutationFn: cancelOrder,
     onMutate: async ({ orderId }) => {
@@ -449,7 +447,7 @@ export default function KitchenPage() {
         toast.info("Bekor qilish amali to'xtatildi.");
         return;
       }
-      mutationOnError(err, variables); // Umumiy xatolik ishlovchisi
+      mutationOnError(err, variables);
       if (context?.previousOrders) {
         queryClient.setQueryData<Order[]>(['orders', 'kitchen'], context.previousOrders);
       }
@@ -464,7 +462,6 @@ export default function KitchenPage() {
     },
   });
 
-  // Bildirishnomani tasdiqlash mutatsiyasi
   const acknowledgeNotificationMutation = useMutation({
     mutationFn: acknowledgeNotification,
     onMutate: async ({ logIds }) => {
@@ -477,7 +474,7 @@ export default function KitchenPage() {
       return { previousNotifications };
     },
     onError: (err, variables, context) => {
-      mutationOnError(err, variables); // Umumiy xatolik ishlovchisi
+      mutationOnError(err, variables);
       if (context?.previousNotifications) {
         queryClient.setQueryData<NotificationLog[]>(['notifications', 'kitchen'], context.previousNotifications);
       }
@@ -548,21 +545,18 @@ export default function KitchenPage() {
   // ----- LOGOUT FUNKSIYASI YANGILANDI -----
   const confirmLogout = () => {
     // 1. Avval token va boshqa saqlangan ma'lumotlarni tozalaymiz
-    localStorage.clear(); // Yoki faqat tokenni: localStorage.removeItem('token');
+    if (typeof window !== 'undefined') {
+        localStorage.clear(); // Yoki faqat tokenni: localStorage.removeItem('token');
+    }
 
     // 2. React Query ning BARCHA aktiv so'rovlarini va keshini o'chiramiz.
-    // Bu davom etayotgan so'rovlarni bekor qiladi va interval refetchlarni to'xtatadi.
-    queryClient.removeQueries(); // <<<--- MUHIM O'ZGARTIRISH
+    queryClient.removeQueries();
 
     // 3. Foydalanuvchini login sahifasiga yo'naltiramiz
     router.push("/auth");
 
     // 4. Logout dialogini yopamiz va xabarni ko'rsatamiz
-    // (redirectdan keyin ishlashi uchun biroz kechiktirish mumkin, lekin shart emas)
     setIsLogoutOpen(false);
-    // Toastni redirectdan keyin ko'rsatish uchun biroz kechiktirish mumkin:
-    // setTimeout(() => toast.success("Tizimdan muvaffaqiyatli chiqdingiz!"), 100);
-    // Yoki hozirgidek qoldirish ham mumkin:
     toast.success("Tizimdan muvaffaqiyatli chiqdingiz!");
   }
 
@@ -571,11 +565,15 @@ export default function KitchenPage() {
   const handleCategoryToggle = (category: keyof typeof visibleCategories) => {
     const newState = { ...visibleCategories, [category]: !visibleCategories[category], }
     setVisibleCategories(newState)
-    try { localStorage.setItem(LOCAL_STORAGE_VISIBLE_CATEGORIES_KEY, JSON.stringify(newState)) }
-    catch (error) { console.error("visibleCategories localStorage saqlashda xatolik:", error); toast.error("Filtr sozlamalarini saqlashda xatolik."); }
+    // localStorage faqat clientda ishlaydi
+    if (typeof window !== 'undefined') {
+        try { localStorage.setItem(LOCAL_STORAGE_VISIBLE_CATEGORIES_KEY, JSON.stringify(newState)) }
+        catch (error) { console.error("visibleCategories localStorage saqlashda xatolik:", error); toast.error("Filtr sozlamalarini saqlashda xatolik."); }
+    }
   }
 
   // ----- Buyurtma kartasi komponenti -----
+  // (O'zgartirishsiz)
   interface OrderCardProps { order: Order; actionButton?: React.ReactNode; }
   const OrderCard: React.FC<OrderCardProps> = ({ order, actionButton }) => {
     const canCancel = order.status === "pending" || order.status === "new";
@@ -619,7 +617,13 @@ export default function KitchenPage() {
   }
 
   // ----- UI QISMI -----
-  // (O'zgartirishsiz - oldingi javobdagidek)
+  // (O'zgartirishsiz)
+
+  // Komponent hali tayyor bo'lmagan holat (isClientReady false bo'lganda)
+  if (!isClientReady) {
+    // Yoki spinner ko'rsatish mumkin
+     return <div className="flex h-screen items-center justify-center text-lg font-medium text-gray-600">Yuklanmoqda...</div>;
+  }
 
   // Asosiy yuklanish holati
   if (isLoadingOrders && !queryClient.getQueryData(['orders', 'kitchen'])) {
