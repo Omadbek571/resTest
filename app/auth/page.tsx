@@ -194,6 +194,7 @@ export default function AuthPage() {
             </div>
           </div>
         </CardFooter>
+          <h3 className="font-medium text-center text-zinc-400">© 2025 <a href="https://t.me/O_Omadbek">CDC Group.</a> Barcha huquqlar himoyalangan.</h3>
       </Card>
     </div>
   )
